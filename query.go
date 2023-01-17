@@ -32,7 +32,7 @@ type QueryReferResult struct {
 	Text    string      `json:"text"`
 }
 
-// QueryRefer submit a refer
+// QueryRefer submit a reference
 func (y *Yearning) QueryRefer(assigned, idc, reason string) (referRes QueryReferResult, err error) {
 	path := "/api/v2/query/refer"
 

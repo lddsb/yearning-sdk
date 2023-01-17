@@ -31,7 +31,7 @@ type FetchSourcePayload struct {
 	Source   []string `json:"source"`
 }
 
-// FetchSource get sources from a IDC
+// FetchSource get sources from an IDC
 func (y *Yearning) FetchSource(idc, tp string) (sourceRes FetchSourceResult, err error) {
 	path := "/api/v2/fetch/source"
 	// TODO params
