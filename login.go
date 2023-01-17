@@ -28,7 +28,7 @@ func (y *Yearning) Login(normal string) (loginRes LoginResult, err error) {
 	params["username"] = y.username
 	params["password"] = y.password
 
-	body, err := y.request("POST", path, nil, params)
+	body, err := commonRequest("POST", y.host+path, nil, params)
 	if err != nil {
 		return
 	}

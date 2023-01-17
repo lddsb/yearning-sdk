@@ -2,11 +2,13 @@ package yearning
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const Unauthorized = Error("Unauthorized")
@@ -18,30 +20,77 @@ func (e Error) Error() string { return string(e) }
 func (Error) YearningError() {}
 
 type Yearning struct {
-	Token    string
-	username string
-	password string
-	host     string
+	token     string
+	username  string
+	password  string
+	host      string
+	loginType string
+	expireAt  int64
+}
+
+type JWTPayload struct {
+	Exp  int64  `json:"exp"`
+	Name string `json:"name"`
+	Role string `json:"role"`
 }
 
 // NewClient new a client
-func NewClient(username, password, host, token string) *Yearning {
-	return &Yearning{
-		username: username,
-		password: password,
-		host:     host,
-		Token: token,
+func NewClient(username, password, host, loginType string) *Yearning {
+	y := &Yearning{
+		username:  username,
+		password:  password,
+		host:      host,
+		loginType: loginType,
+	}
+
+	y.checkToken()
+	return y
+}
+
+func (y *Yearning) checkToken() {
+	autoLogin := func() {
+		loginRes, err := y.Login(y.loginType)
+		if err != nil {
+			panic(fmt.Errorf("login error: %v", err))
+		}
+
+		y.token = loginRes.Payload.Token
+		// 获取过期时间，将其设置到属性中
+		y.expireAt = getExpireAt(y.token)
+	}
+
+	if y.expireAt < time.Now().Unix() {
+		autoLogin()
 	}
 }
 
-// request base request method
-func (y *Yearning) request(method, path string, headers map[string]string, params map[string]interface{}) (b []byte, err error) {
+func getExpireAt(token string) int64 {
+	jwtArr := strings.Split(token, ".")
+	if len(jwtArr) < 3 {
+		return 0
+	}
+
+	decodeString, err := base64.RawStdEncoding.DecodeString(jwtArr[1])
+	if err != nil {
+		return 0
+	}
+
+	var jwtPayload JWTPayload
+	err = json.Unmarshal(decodeString, &jwtPayload)
+	if err != nil {
+		return 0
+	}
+
+	return jwtPayload.Exp
+}
+
+func commonRequest(method, url string, headers map[string]string, params map[string]interface{}) (b []byte, err error) {
 	jsonData, err := json.Marshal(params)
 	if err != nil {
 		return
 	}
 	client := &http.Client{}
-	req, err := http.NewRequest(method, y.host+path, bytes.NewReader(jsonData))
+	req, err := http.NewRequest(method, url, bytes.NewReader(jsonData))
 	if err != nil {
 		return
 	}
@@ -58,8 +107,6 @@ func (y *Yearning) request(method, path string, headers map[string]string, param
 	if headers == nil {
 		headers = make(map[string]string)
 	}
-	// 头自动带上token
-	headers["Authorization"] = "Bearer " + y.Token
 	headers["Content-Type"] = "application/json;charset=UTF-8"
 	for headerField, headerVal := range headers {
 		if req.Header.Get(headerField) == "" {
@@ -93,4 +140,15 @@ func (y *Yearning) request(method, path string, headers map[string]string, param
 	}
 
 	return
+}
+
+// request base request method
+func (y *Yearning) request(method, path string, headers map[string]string, params map[string]interface{}) (b []byte, err error) {
+	// 判断token是否已过期，如果已过期则直接抛出异常或进行登录操作
+	y.checkToken()
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Authorization"] = "Bearer " + y.token
+	return commonRequest(method, y.host+path, headers, params)
 }
